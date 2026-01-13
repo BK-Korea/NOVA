@@ -12,12 +12,17 @@ NOVA is an AI-powered research assistant that:
 
 ## Features
 
-- Company name resolution using LLM
-- Web scraping for IR materials
-- Document parsing for multiple formats
-- Vector store with ChromaDB
-- Iterative quality refinement (Aurora-style)
-- CLI interface with rich output
+- **Intelligent Company Matching**: LLM-powered company name resolution with IR website detection
+- **Advanced IR Scraping**: 
+  - Recursive crawling with subdomain detection (ir.*, investors.*)
+  - Automatic discovery of IR sections from homepage links
+  - Support for shareholder letters, quarterly reports, presentations, news
+  - **SEC filings automatically excluded** to reduce costs
+- **Multi-format Document Parsing**: HTML, PDF, PPT, DOCX with fallback strategies
+- **Smart Caching**: Reuses indexed materials to avoid redundant API calls
+- **Vector Store**: ChromaDB with persistent storage
+- **Iterative Quality Refinement**: Aurora-style quality evaluation (8+/10 CEO-level reports)
+- **Modern CLI**: Rich terminal UI with magenta theme
 
 ## Installation
 
@@ -144,16 +149,23 @@ NOVA/
 
 ## How It Works
 
-1. **Company Resolution**: User inputs company name → LLM finds official name & website
-2. **Scraping**: Scraper finds IR sections and downloads materials
-3. **Parsing**: Documents are parsed into searchable chunks
-4. **Indexing**: Chunks are embedded and stored in ChromaDB
+1. **Company Resolution**: User inputs company name → LLM finds official name, website, and IR website
+2. **Intelligent Scraping**: 
+   - Tries IR subdomains (ir.*, investors.*)
+   - Crawls homepage for IR links
+   - Recursively follows IR-related pages
+   - **Excludes SEC filings** automatically
+3. **Document Processing**: 
+   - Downloads and parses materials (PDF, HTML, PPT)
+   - Extracts text into searchable chunks
+   - Checks if already indexed (caching)
+4. **Indexing**: Chunks are embedded (OpenAI/GLM) and stored in ChromaDB
 5. **Question Answering**:
-   - Retrieve relevant chunks
-   - Generate initial answer
-   - Evaluate quality (1-10 score)
-   - Refine if score < 8
-   - Return only if 8+ quality
+   - Retrieve relevant chunks using semantic search
+   - Generate initial answer with GLM-4.7
+   - Evaluate quality (1-10 score) on 5 criteria
+   - Refine iteratively if score < 8
+   - Return only if 8+ quality (CEO-level)
 
 ## Quality Evaluation
 
@@ -168,8 +180,15 @@ Only answers scoring 8/10 or higher are displayed.
 
 ## API Keys Used
 
-- **GLM-4.7** (Zhipu AI): Primary LLM for chat and embeddings
-- **OpenAI**: Optional embeddings (higher quality)
+- **GLM-4.7** (Zhipu AI): Primary LLM for chat (supports reasoning models)
+- **OpenAI**: Optional embeddings (text-embedding-3-small, recommended for better quality)
+
+### Cost Optimization
+
+- **Embeddings**: ~$0.003 per 100 chunks (very cheap)
+- **Q&A**: ~$0.01-0.05 per question (depends on complexity)
+- **Caching**: Already indexed materials are reused (no additional cost)
+- **SEC Exclusion**: Automatically filters out SEC filings to reduce processing
 
 ## Security Notes
 
@@ -177,14 +196,38 @@ Only answers scoring 8/10 or higher are displayed.
 - Never commit `.env` to version control
 - Use `.env.example` as template for setup
 
+## Recent Updates
+
+### v0.2.0 (Latest)
+- ✅ **SEC Filing Exclusion**: Automatically filters out SEC documents to reduce costs
+- ✅ **Enhanced IR Scraper**: Recursive crawling with subdomain detection
+- ✅ **GLM-4.7 Reasoning Support**: Proper handling of reasoning models
+- ✅ **Shareholder Letters**: Added support for shareholder/CEO letters
+- ✅ **Smart Caching**: Reuses indexed materials across sessions
+- ✅ **Improved UI**: Unified magenta theme throughout
+- ✅ **Comprehensive Tests**: Full pipeline test suite
+
 ## Differences from Aurora
 
 | Feature | Aurora | Nova |
 |---------|--------|-------|
-| Data Source | SEC Filings (EDGAR) | Company IR materials |
-| Focus | Regulatory documents | News, presentations, IR pitches |
-| Website | sec.gov | Company official websites |
-| Scraper | sec-edgar-downloader | Custom web scraper |
+| Data Source | SEC Filings (EDGAR) | Company IR materials (excludes SEC) |
+| Focus | Regulatory documents | News, presentations, IR pitches, shareholder letters |
+| Website | sec.gov | Company official IR websites |
+| Scraper | sec-edgar-downloader | Custom intelligent web scraper |
+| Caching | Basic | Persistent with reuse detection |
+
+## Testing
+
+Run the test suite to verify functionality:
+
+```bash
+# Test scraper only
+python3 tests/test_scraper.py --company coca-cola
+
+# Test full pipeline (scraping → parsing → indexing → Q&A)
+python3 tests/test_full_pipeline.py
+```
 
 ## Troubleshooting
 
@@ -199,6 +242,16 @@ If you get import errors, reinstall the package:
 ```bash
 python3 -m pip install --user -e . --force-reinstall
 ```
+
+### No Materials Found
+- Check if company has an IR website (some companies use different structures)
+- Try using the full company name (e.g., "The Coca-Cola Company" instead of "Coca-Cola")
+- Check network connectivity (some sites may block automated access)
+
+### GLM API Issues
+- Verify API key is correct in `.env`
+- Check Zhipu AI console for usage/quota: https://open.bigmodel.cn/
+- GLM-4.7 is a reasoning model - responses may take longer
 
 ## License
 
