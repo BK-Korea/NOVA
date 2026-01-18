@@ -1,4 +1,5 @@
 """Company matching using LangChain and LLM."""
+import json
 import logging
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
@@ -84,9 +85,6 @@ class CompanyMatcher:
 
             response = self.llm.invoke(messages)
             content = response.content.strip()
-
-            # Parse JSON response
-            import json
 
             # Try to extract JSON if there's extra text
             if "```json" in content:
