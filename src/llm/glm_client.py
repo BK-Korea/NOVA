@@ -75,7 +75,8 @@ class GLMChat(BaseChatModel):
 
     @retry(
         stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10)
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception(_is_retryable_error)
     )
     def _call_api(self, messages: List[dict]) -> dict:
         """Make API call with retry logic."""
@@ -91,10 +92,35 @@ class GLMChat(BaseChatModel):
             "max_tokens": self.max_tokens,
         }
 
-        with httpx.Client(timeout=self.timeout) as client:
-            response = client.post(url, headers=headers, json=payload)
-            response.raise_for_status()
-            return response.json()
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.post(url, headers=headers, json=payload)
+                
+                # Log error details before raising
+                if response.status_code != 200:
+                    error_detail = response.text
+                    logger.error(f"GLM API error {response.status_code}: {error_detail}")
+                    if response.status_code == 401:
+                        raise ValueError("Authentication failed - check your GLM_API_KEY")
+                    elif response.status_code == 400:
+                        raise ValueError(f"Bad request to GLM API: {error_detail}")
+                    elif response.status_code == 429:
+                        raise ValueError("Rate limit exceeded - please wait and try again")
+                
+                response.raise_for_status()
+                return response.json()
+        except httpx.HTTPStatusError as e:
+            # Re-raise with more context
+            error_msg = f"GLM API HTTP error {e.response.status_code}"
+            if e.response.text:
+                try:
+                    error_data = e.response.json()
+                    if "error" in error_data:
+                        error_msg += f": {error_data['error']}"
+                except:
+                    error_msg += f": {e.response.text[:200]}"
+            logger.error(error_msg)
+            raise ValueError(error_msg) from e
 
     def _generate(
         self,

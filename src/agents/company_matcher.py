@@ -118,5 +118,14 @@ class CompanyMatcher:
             return {"error": f"Failed to parse company information: {e}"}
 
         except Exception as e:
-            logger.error(f"Error matching company: {e}")
-            return {"error": str(e)}
+            logger.error(f"Error matching company: {e}", exc_info=True)
+            # Provide more user-friendly error messages
+            error_msg = str(e)
+            if "Authentication failed" in error_msg:
+                return {"error": "GLM API authentication failed. Please check your GLM_API_KEY in .env file."}
+            elif "Rate limit" in error_msg or "429" in error_msg:
+                return {"error": "API rate limit exceeded. Please wait a moment and try again."}
+            elif "HTTP" in error_msg or "Status" in error_msg:
+                return {"error": f"API request failed: {error_msg}. Please check your API key and network connection."}
+            else:
+                return {"error": f"Failed to match company: {error_msg}"}
