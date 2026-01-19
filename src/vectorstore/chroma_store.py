@@ -29,11 +29,34 @@ class RetrievedChunk:
         return f"[{material_type} | {title}]"
 
     def to_context_string(self) -> str:
-        """Format chunk for LLM context with URL."""
+        """Format chunk for LLM context with detailed source information."""
         url = self.metadata.get('url', '')
-        if url:
-            return f"{self.citation}\nURL: {url}\n{self.content}"
-        return f"{self.citation}\n{self.content}"
+        title = self.metadata.get('title', 'Unknown')
+        material_type = self.metadata.get('material_type', 'Unknown')
+        date = self.metadata.get('date', '')
+        chunk_index = self.metadata.get('chunk_index', '')
+        page_number = self.metadata.get('page_number', '')
+        element_type = self.metadata.get('element_type', '')
+        file_format = self.metadata.get('file_format', '')
+        
+        # Build detailed source info
+        source_parts = [f"SOURCE_URL: {url}"]
+        source_parts.append(f"DOCUMENT_TITLE: {title}")
+        source_parts.append(f"MATERIAL_TYPE: {material_type}")
+        if date:
+            source_parts.append(f"DATE: {date}")
+        if file_format:
+            source_parts.append(f"FILE_FORMAT: {file_format}")
+        if page_number:
+            source_parts.append(f"PAGE_NUMBER: {page_number}")
+        if chunk_index is not None:
+            source_parts.append(f"CHUNK_INDEX: {chunk_index}")
+        if element_type:
+            source_parts.append(f"ELEMENT_TYPE: {element_type}")
+        
+        source_info = "\n".join(source_parts)
+        
+        return f"{source_info}\n\nCONTENT:\n{self.content}"
 
 
 class ChromaStore:

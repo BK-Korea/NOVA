@@ -269,8 +269,28 @@ class NovaAgent:
             if not retrieved:
                 return {"error": "No relevant information found in indexed materials."}
 
-            # Build context
-            context = "\n\n---\n\n".join([c.to_context_string() for c in retrieved])
+            # Build context with detailed source information
+            context_parts = []
+            for i, chunk in enumerate(retrieved):
+                chunk_context = chunk.to_context_string()
+                # Add chunk number for reference
+                context_parts.append(f"[CHUNK_{i+1}]\n{chunk_context}")
+            
+            context = "\n\n---\n\n".join(context_parts)
+            
+            # Store retrieved chunks for citation verification
+            self.state["retrieved_chunks"] = [
+                {
+                    "index": i,
+                    "url": c.metadata.get('url', ''),
+                    "title": c.metadata.get('title', ''),
+                    "content": c.content[:200] + "..." if len(c.content) > 200 else c.content,
+                    "page_number": c.metadata.get('page_number'),
+                    "chunk_index": c.metadata.get('chunk_index'),
+                    "score": c.score
+                }
+                for i, c in enumerate(retrieved)
+            ]
 
             if self.progress_callback:
                 self.progress_callback("Generating answer...")
@@ -281,10 +301,24 @@ class NovaAgent:
                 context=context,
                 progress_callback=self.progress_callback
             )
+            
+            # Validate URLs in the answer
+            if self.progress_callback:
+                self.progress_callback("Validating source URLs...")
+            
+            # Use nest_asyncio for async in sync context
+            import nest_asyncio
+            import asyncio
+            nest_asyncio.apply()
+            
+            async def validate_citations():
+                return await self._validate_and_enhance_citations(answer, retrieved)
+            
+            validated_answer = asyncio.run(validate_citations())
 
             # Update state
             self.state["current_query"] = question
-            self.state["current_answer"] = answer
+            self.state["current_answer"] = validated_answer
             self.state["answer_score"] = score
             self.state["meets_quality_threshold"] = score >= self.quality_threshold
 
