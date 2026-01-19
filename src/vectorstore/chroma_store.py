@@ -29,7 +29,10 @@ class RetrievedChunk:
         return f"[{material_type} | {title}]"
 
     def to_context_string(self) -> str:
-        """Format chunk for LLM context."""
+        """Format chunk for LLM context with URL."""
+        url = self.metadata.get('url', '')
+        if url:
+            return f"{self.citation}\nURL: {url}\n{self.content}"
         return f"{self.citation}\n{self.content}"
 
 

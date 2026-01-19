@@ -282,12 +282,13 @@ CEO와 투자사에게 보고할 **정교한 분석 보고서**를 작성합니�
 - 각 섹션의 핵심 내용 **바로 아래**에 출처를 표시
 - **반드시 다음 형식 사용**: `출처 : https://www.example.com/path/to/page`
 - 마크다운 링크 형식 `[텍스트](URL)` 사용 금지
+- **중요**: 컨텍스트에 제공된 URL을 정확히 그대로 사용하세요. URL을 수정하거나 축약하지 마세요.
 - 실제 URL을 텍스트로 그대로 표시하여 복사-붙여넣기 시에도 레퍼런스가 완전히 복사되도록 함
 - 마지막에 한꺼번에 모으지 말고, 관련 내용 근처에 배치
 - 예시:
   ```
   Joby는 2027년까지 생산량을 두 배로 늘릴 계획입니다.
-  출처 : https://www.jobyaviation.com/news/joby-to-expand-manufacturing-footprint/
+  출처 : https://www.jobyaviation.com/news/joby-to-expand-manufacturing-footprint-with-acquisition-of-second-ohio-facility/
   ```
 
 ## 품질 기준
@@ -341,8 +342,11 @@ CEO와 투자사에게 보고할 **정교한 분석 보고서**를 작성합니�
 위 문서를 기반으로 **상세한 분석 보고서**를 작성하세요.
 구체적인 수치, 직접 인용, 명확한 출처를 포함하세요.
 
-**중요**: 출처는 반드시 `출처 : https://example.com/path` 형식으로 표시하세요.
-마크다운 링크 형식 `[텍스트](URL)`은 사용하지 마세요.""")
+**중요**: 
+- 출처는 반드시 `출처 : https://example.com/path` 형식으로 표시하세요.
+- 컨텍스트에 제공된 URL을 정확히 그대로 사용하세요. URL을 수정하거나 축약하지 마세요.
+- 마크다운 링크 형식 `[텍스트](URL)`은 사용하지 마세요.
+- 각 사실이나 수치에 대해 컨텍스트에서 제공된 URL을 정확히 참조하세요.""")
         ]
 
         try:

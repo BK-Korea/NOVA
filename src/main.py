@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.agents.graph import NovaAgent
+from src.utils.word_export import export_to_word
 
 # Load environment variables
 load_dotenv()
@@ -224,6 +225,22 @@ def main():
 
             if not result.get("meets_quality_threshold"):
                 console.print(f"[dim yellow]⚠ Answer quality ({score}/10) below threshold ({agent.quality_threshold}/10)[/dim yellow]")
+            
+            # Offer Word export
+            console.print()
+            if Confirm.ask("[bold magenta]Export to Word document?[/bold magenta]", default=False):
+                try:
+                    company_name = agent.state.get("company_name", "Unknown")
+                    output_path = export_to_word(
+                        content=answer,
+                        company_name=company_name,
+                        question=question
+                    )
+                    console.print(f"[green]✓[/green] Report exported to: [bold]{output_path}[/bold]")
+                except ImportError as e:
+                    console.print(f"[yellow]⚠ Word export requires python-docx: pip install python-docx[/yellow]")
+                except Exception as e:
+                    console.print(f"[red]Error exporting to Word: {e}[/red]")
         else:
             console.print("[yellow]No answer generated. Please try a different question.[/yellow]")
 
