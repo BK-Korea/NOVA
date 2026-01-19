@@ -112,6 +112,15 @@ class IRScraper:
         ".xlsx": "xlsx",
         ".html": "html",
         ".htm": "html",
+        # Audio files
+        ".mp3": "audio",
+        ".wav": "audio",
+        ".m4a": "audio",
+        ".ogg": "audio",
+        # Video files (can extract audio)
+        ".mp4": "video",
+        ".webm": "video",
+        ".mov": "video",
     }
 
     def __init__(self, timeout: int = 30, max_depth: int = 2):

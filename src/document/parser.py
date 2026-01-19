@@ -359,10 +359,104 @@ class DocumentParser:
                     else:
                         logger.warning("save_dir not provided for PDF download")
                         return []
+                elif "audio" in content_type or url.lower().endswith((".mp3", ".wav", ".m4a", ".ogg")):
+                    # Audio file - transcribe to text
+                    return await self._parse_audio(url, material_metadata, save_dir, response.content)
+                elif "video" in content_type or url.lower().endswith((".mp4", ".webm", ".mov")):
+                    # Video file - extract audio and transcribe
+                    logger.info(f"Video file detected: {url}. Audio extraction not yet implemented. Skipping.")
+                    return []
                 else:
                     logger.debug(f"Unsupported content type: {content_type} for {url}")
                     return []
 
         except Exception as e:
             logger.error(f"Error parsing URL {url}: {e}")
+            return []
+
+    async def _parse_audio(
+        self,
+        url: str,
+        material_metadata: Dict[str, Any],
+        save_dir: Optional[Path],
+        audio_data: bytes
+    ) -> List[DocumentChunk]:
+        """
+        Parse audio file by transcribing to text using OpenAI Whisper API.
+        
+        Args:
+            url: Audio file URL
+            material_metadata: Metadata about the source
+            save_dir: Optional directory to save audio file
+            audio_data: Audio file content (bytes)
+        
+        Returns:
+            List of DocumentChunk from transcribed text
+        """
+        import os
+        from dotenv import load_dotenv
+        
+        load_dotenv()
+        api_key = os.getenv("OPENAI_API_KEY")
+        
+        if not api_key:
+            logger.warning("OPENAI_API_KEY not found. Audio transcription skipped.")
+            return []
+        
+        try:
+            import openai
+            import hashlib
+            import tempfile
+            
+            # Check file size (OpenAI limit: 25MB)
+            file_size_mb = len(audio_data) / (1024 * 1024)
+            if file_size_mb > 25:
+                logger.warning(f"Audio file too large ({file_size_mb:.1f}MB > 25MB). Skipping.")
+                return []
+            
+            # Save audio to temporary file
+            if save_dir:
+                save_dir.mkdir(parents=True, exist_ok=True)
+                filename = hashlib.md5(url.encode()).hexdigest()[:10] + ".mp3"
+                temp_path = save_dir / filename
+            else:
+                temp_path = Path(tempfile.mktemp(suffix=".mp3"))
+            
+            with open(temp_path, "wb") as f:
+                f.write(audio_data)
+            
+            logger.info(f"Transcribing audio: {url} ({file_size_mb:.1f}MB)")
+            
+            # Call Whisper API
+            client = openai.OpenAI(api_key=api_key)
+            
+            with open(temp_path, "rb") as audio_file:
+                transcript = client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=audio_file,
+                    language="ko",  # Korean (can be "auto" for auto-detection)
+                    response_format="text"
+                )
+            
+            logger.info(f"Transcription completed. Length: {len(transcript)} chars")
+            
+            # Create chunks from transcript
+            chunks = self._simple_chunk(
+                transcript,
+                {
+                    **material_metadata,
+                    "file_format": "audio",
+                    "transcription": True,
+                    "audio_duration": None  # Could extract from metadata if available
+                },
+                temp_path
+            )
+            
+            # Optionally keep audio file for reference
+            # temp_path.unlink()  # Uncomment to delete after transcription
+            
+            return chunks
+            
+        except Exception as e:
+            logger.error(f"Error transcribing audio {url}: {e}")
             return []
