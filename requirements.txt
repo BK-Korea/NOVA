@@ -19,6 +19,8 @@ unstructured>=0.15.0
 unstructured[local-inference]>=0.15.0
 python-pptx>=0.6.21
 python-docx>=1.1.0
+pandas>=2.0.0  # For Excel and CSV parsing
+openpyxl>=3.1.0  # For Excel file support
 
 # CLI
 typer>=0.12.0

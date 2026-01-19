@@ -1,10 +1,11 @@
-"""Document parser for IR materials (HTML, PPT, PDF)."""
+"""Document parser for IR materials (HTML, PPT, PDF, Excel, etc.)."""
 import logging
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from dataclasses import dataclass
 import asyncio
 from io import BytesIO
+from urllib.parse import urlparse
 
 from unstructured.partition.html import partition_html
 from unstructured.partition.pdf import partition_pdf
@@ -74,6 +75,16 @@ class DocumentParser:
                 return self._parse_pptx(file_path, material_metadata)
             elif suffix in [".doc", ".docx"]:
                 return self._parse_docx(file_path, material_metadata)
+            elif suffix in [".xls", ".xlsx"]:
+                return self._parse_xlsx(file_path, material_metadata)
+            elif suffix == ".txt":
+                return self._parse_txt(file_path, material_metadata)
+            elif suffix == ".csv":
+                return self._parse_csv(file_path, material_metadata)
+            elif suffix == ".rtf":
+                return self._parse_rtf(file_path, material_metadata)
+            elif suffix == ".zip":
+                return self._parse_zip(file_path, material_metadata)
             else:
                 logger.warning(f"Unsupported file type: {suffix}")
                 return []
@@ -199,6 +210,159 @@ class DocumentParser:
             )
         except Exception as e:
             logger.error(f"Failed to parse DOCX {file_path}: {e}")
+            return []
+
+    def _parse_xlsx(
+        self,
+        file_path: Path,
+        material_metadata: Dict[str, Any]
+    ) -> List[DocumentChunk]:
+        """Parse Excel file."""
+        try:
+            # Try unstructured first
+            try:
+                from unstructured.partition.xlsx import partition_xlsx
+                elements = partition_xlsx(filename=str(file_path))
+                return self._create_chunks_from_elements(
+                    elements,
+                    material_metadata,
+                    file_path
+                )
+            except ImportError:
+                logger.debug("unstructured xlsx partition not available, trying pandas")
+            
+            # Fallback: pandas
+            try:
+                import pandas as pd
+                chunks = []
+                
+                # Read all sheets
+                excel_file = pd.ExcelFile(file_path)
+                for sheet_name in excel_file.sheet_names:
+                    df = pd.read_excel(excel_file, sheet_name=sheet_name)
+                    
+                    # Convert DataFrame to text
+                    text_lines = []
+                    text_lines.append(f"Sheet: {sheet_name}\n")
+                    text_lines.append(df.to_string(index=False))
+                    
+                    sheet_text = "\n".join(text_lines)
+                    sheet_chunks = self._simple_chunk(
+                        sheet_text,
+                        {**material_metadata, "sheet_name": sheet_name},
+                        file_path
+                    )
+                    chunks.extend(sheet_chunks)
+                
+                return chunks
+            except ImportError:
+                logger.warning("pandas not available for Excel parsing")
+                return []
+        except Exception as e:
+            logger.error(f"Failed to parse XLSX {file_path}: {e}")
+            return []
+
+    def _parse_txt(
+        self,
+        file_path: Path,
+        material_metadata: Dict[str, Any]
+    ) -> List[DocumentChunk]:
+        """Parse plain text file."""
+        try:
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                text = f.read()
+            return self._simple_chunk(text, material_metadata, file_path)
+        except Exception as e:
+            logger.error(f"Failed to parse TXT {file_path}: {e}")
+            return []
+
+    def _parse_csv(
+        self,
+        file_path: Path,
+        material_metadata: Dict[str, Any]
+    ) -> List[DocumentChunk]:
+        """Parse CSV file."""
+        try:
+            import pandas as pd
+            df = pd.read_csv(file_path)
+            text = df.to_string(index=False)
+            return self._simple_chunk(text, material_metadata, file_path)
+        except ImportError:
+            logger.warning("pandas not available for CSV parsing")
+            # Fallback: simple text parsing
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                text = f.read()
+            return self._simple_chunk(text, material_metadata, file_path)
+        except Exception as e:
+            logger.error(f"Failed to parse CSV {file_path}: {e}")
+            return []
+
+    def _parse_rtf(
+        self,
+        file_path: Path,
+        material_metadata: Dict[str, Any]
+    ) -> List[DocumentChunk]:
+        """Parse RTF file."""
+        try:
+            from unstructured.partition.rtf import partition_rtf
+            elements = partition_rtf(filename=str(file_path))
+            return self._create_chunks_from_elements(
+                elements,
+                material_metadata,
+                file_path
+            )
+        except ImportError:
+            logger.warning("unstructured rtf partition not available")
+            # Fallback: simple text extraction
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                text = f.read()
+            # Remove RTF control codes (simple)
+            import re
+            text = re.sub(r'\\[a-z]+\d*\s?', '', text)
+            text = re.sub(r'\{[^}]*\}', '', text)
+            return self._simple_chunk(text, material_metadata, file_path)
+        except Exception as e:
+            logger.error(f"Failed to parse RTF {file_path}: {e}")
+            return []
+
+    def _parse_zip(
+        self,
+        file_path: Path,
+        material_metadata: Dict[str, Any]
+    ) -> List[DocumentChunk]:
+        """Parse ZIP file by extracting and parsing contents."""
+        import zipfile
+        import tempfile
+        from pathlib import Path as PathLib
+        
+        chunks = []
+        try:
+            with zipfile.ZipFile(file_path, 'r') as zip_ref:
+                # Extract to temporary directory
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    zip_ref.extractall(temp_dir)
+                    
+                    # Parse each file in the zip
+                    for extracted_file in PathLib(temp_dir).rglob('*'):
+                        if extracted_file.is_file():
+                            # Skip non-document files
+                            if extracted_file.suffix.lower() in ['.exe', '.dll', '.so', '.bin']:
+                                continue
+                            
+                            try:
+                                file_chunks = self.parse_file(extracted_file, {
+                                    **material_metadata,
+                                    "zip_file": str(file_path),
+                                    "extracted_path": str(extracted_file.relative_to(temp_dir))
+                                })
+                                chunks.extend(file_chunks)
+                            except Exception as e:
+                                logger.debug(f"Failed to parse {extracted_file} from ZIP: {e}")
+                                continue
+            
+            return chunks
+        except Exception as e:
+            logger.error(f"Failed to parse ZIP {file_path}: {e}")
             return []
 
     def _create_chunks_from_elements(
@@ -360,19 +524,169 @@ class DocumentParser:
                         logger.warning("save_dir not provided for PDF download")
                         return []
                 elif "audio" in content_type or url.lower().endswith((".mp3", ".wav", ".m4a", ".ogg")):
-                    # Audio file - transcribe to text
-                    return await self._parse_audio(url, material_metadata, save_dir, response.content)
-                elif "video" in content_type or url.lower().endswith((".mp4", ".webm", ".mov")):
-                    # Video file - extract audio and transcribe
-                    logger.info(f"Video file detected: {url}. Audio extraction not yet implemented. Skipping.")
+                    # Skip audio files
+                    logger.info(f"Audio file detected: {url}. Skipping as requested.")
                     return []
+                elif "video" in content_type or url.lower().endswith((".mp4", ".webm", ".mov")):
+                    # Skip video files
+                    logger.info(f"Video file detected: {url}. Skipping as requested.")
+                    return []
+                elif "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" in content_type or \
+                     "application/vnd.ms-excel" in content_type or \
+                     url.lower().endswith((".xls", ".xlsx")):
+                    # Excel file
+                    return await self._parse_excel_url(url, material_metadata, save_dir, response.content)
+                elif "text/plain" in content_type or url.lower().endswith(".txt"):
+                    # Plain text file
+                    text = response.text
+                    return self._simple_chunk(text, material_metadata, Path(url))
+                elif "text/csv" in content_type or url.lower().endswith(".csv"):
+                    # CSV file
+                    return await self._parse_csv_url(url, material_metadata, save_dir, response.content)
+                elif "application/zip" in content_type or url.lower().endswith(".zip"):
+                    # ZIP file - extract and parse contents
+                    return await self._parse_zip_url(url, material_metadata, save_dir, response.content)
+                elif "application/msword" in content_type or \
+                     "application/vnd.openxmlformats-officedocument.wordprocessingml.document" in content_type:
+                    # Word file from URL
+                    return await self._parse_docx_url(url, material_metadata, save_dir, response.content)
+                elif "application/vnd.ms-powerpoint" in content_type or \
+                     "application/vnd.openxmlformats-officedocument.presentationml.presentation" in content_type:
+                    # PowerPoint file from URL
+                    return await self._parse_pptx_url(url, material_metadata, save_dir, response.content)
                 else:
-                    logger.debug(f"Unsupported content type: {content_type} for {url}")
+                    # Try to parse as generic document
+                    logger.debug(f"Unknown content type: {content_type} for {url}. Attempting generic parsing.")
+                    # Try saving and parsing based on extension
+                    if save_dir:
+                        import hashlib
+                        save_dir.mkdir(parents=True, exist_ok=True)
+                        ext = Path(urlparse(url).path).suffix or ".bin"
+                        filename = hashlib.md5(url.encode()).hexdigest()[:10] + ext
+                        temp_path = save_dir / filename
+                        with open(temp_path, "wb") as f:
+                            f.write(response.content)
+                        # Try parsing as file
+                        return self.parse_file(temp_path, material_metadata)
                     return []
 
         except Exception as e:
             logger.error(f"Error parsing URL {url}: {e}")
             return []
+
+    async def _parse_excel_url(
+        self,
+        url: str,
+        material_metadata: Dict[str, Any],
+        save_dir: Optional[Path],
+        file_data: bytes
+    ) -> List[DocumentChunk]:
+        """Parse Excel file from URL."""
+        if not save_dir:
+            logger.warning("save_dir not provided for Excel download")
+            return []
+        
+        import hashlib
+        save_dir.mkdir(parents=True, exist_ok=True)
+        filename = hashlib.md5(url.encode()).hexdigest()[:10] + ".xlsx"
+        temp_path = save_dir / filename
+        
+        with open(temp_path, "wb") as f:
+            f.write(file_data)
+        
+        return self._parse_xlsx(temp_path, material_metadata)
+
+    async def _parse_csv_url(
+        self,
+        url: str,
+        material_metadata: Dict[str, Any],
+        save_dir: Optional[Path],
+        file_data: bytes
+    ) -> List[DocumentChunk]:
+        """Parse CSV file from URL."""
+        if not save_dir:
+            # Try parsing directly from text
+            try:
+                text = file_data.decode('utf-8', errors='ignore')
+                return self._simple_chunk(text, material_metadata, Path(url))
+            except:
+                return []
+        
+        import hashlib
+        save_dir.mkdir(parents=True, exist_ok=True)
+        filename = hashlib.md5(url.encode()).hexdigest()[:10] + ".csv"
+        temp_path = save_dir / filename
+        
+        with open(temp_path, "wb") as f:
+            f.write(file_data)
+        
+        return self._parse_csv(temp_path, material_metadata)
+
+    async def _parse_zip_url(
+        self,
+        url: str,
+        material_metadata: Dict[str, Any],
+        save_dir: Optional[Path],
+        file_data: bytes
+    ) -> List[DocumentChunk]:
+        """Parse ZIP file from URL."""
+        if not save_dir:
+            logger.warning("save_dir not provided for ZIP download")
+            return []
+        
+        import hashlib
+        save_dir.mkdir(parents=True, exist_ok=True)
+        filename = hashlib.md5(url.encode()).hexdigest()[:10] + ".zip"
+        temp_path = save_dir / filename
+        
+        with open(temp_path, "wb") as f:
+            f.write(file_data)
+        
+        return self._parse_zip(temp_path, material_metadata)
+
+    async def _parse_docx_url(
+        self,
+        url: str,
+        material_metadata: Dict[str, Any],
+        save_dir: Optional[Path],
+        file_data: bytes
+    ) -> List[DocumentChunk]:
+        """Parse Word document from URL."""
+        if not save_dir:
+            logger.warning("save_dir not provided for DOCX download")
+            return []
+        
+        import hashlib
+        save_dir.mkdir(parents=True, exist_ok=True)
+        filename = hashlib.md5(url.encode()).hexdigest()[:10] + ".docx"
+        temp_path = save_dir / filename
+        
+        with open(temp_path, "wb") as f:
+            f.write(file_data)
+        
+        return self._parse_docx(temp_path, material_metadata)
+
+    async def _parse_pptx_url(
+        self,
+        url: str,
+        material_metadata: Dict[str, Any],
+        save_dir: Optional[Path],
+        file_data: bytes
+    ) -> List[DocumentChunk]:
+        """Parse PowerPoint from URL."""
+        if not save_dir:
+            logger.warning("save_dir not provided for PPTX download")
+            return []
+        
+        import hashlib
+        save_dir.mkdir(parents=True, exist_ok=True)
+        filename = hashlib.md5(url.encode()).hexdigest()[:10] + ".pptx"
+        temp_path = save_dir / filename
+        
+        with open(temp_path, "wb") as f:
+            f.write(file_data)
+        
+        return self._parse_pptx(temp_path, material_metadata)
 
     async def _parse_audio(
         self,
