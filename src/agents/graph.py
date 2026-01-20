@@ -1,7 +1,7 @@
 """NOVA Agent - Main agent graph orchestrating the research workflow."""
 import logging
 from pathlib import Path
-from typing import Dict, Any, Optional, Callable
+from typing import Dict, Any, Optional, Callable, List
 from pydantic import SecretStr
 
 from .state import AgentState, create_initial_state
@@ -242,6 +242,57 @@ class NovaAgent:
 
         return 0
 
+    async def _validate_and_enhance_citations(
+        self,
+        answer: str,
+        retrieved_chunks: List
+    ) -> str:
+        """
+        Validate URLs in answer and enhance citations with verification status.
+        """
+        from ..utils.url_validator import URLValidator, extract_urls_from_text
+        
+        # Extract URLs from answer
+        urls_in_answer = extract_urls_from_text(answer)
+        
+        # Get URLs from retrieved chunks
+        chunk_urls = {chunk.metadata.get('url', '') for chunk in retrieved_chunks if chunk.metadata.get('url')}
+        
+        # Validate all URLs
+        validator = URLValidator(timeout=10)
+        all_urls = list(set(urls_in_answer + list(chunk_urls)))
+        
+        if not all_urls:
+            return answer
+        
+        # Validate URLs
+        validation_results = {}
+        for url in all_urls:
+            try:
+                result = await validator.validate_url(url)
+                validation_results[url] = result
+            except Exception as e:
+                logger.warning(f"Error validating URL {url}: {e}")
+                validation_results[url] = {"valid": False, "accessible": False, "error": str(e)}
+        
+        # Enhance answer with validation status
+        enhanced_answer = answer
+        
+        # Add validation footer if there are URLs
+        if validation_results:
+            validation_footer = "\n\n---\n\n## 출처 검증 결과\n\n"
+            for url, result in validation_results.items():
+                if url in urls_in_answer or url in chunk_urls:
+                    status_icon = validator.get_url_status_icon(result)
+                    status_text = "접근 가능" if result.get("accessible") else "접근 불가"
+                    if result.get("error"):
+                        status_text += f" ({result.get('error')})"
+                    validation_footer += f"{status_icon} {url}\n- 상태: {status_text}\n\n"
+            
+            enhanced_answer += validation_footer
+        
+        return enhanced_answer
+
     def ask(self, question: str) -> Dict[str, Any]:
         """
         Ask a question about indexed materials.
@@ -323,7 +374,7 @@ class NovaAgent:
             self.state["meets_quality_threshold"] = score >= self.quality_threshold
 
             return {
-                "current_answer": answer,
+                "current_answer": validated_answer,
                 "answer_score": score,
                 "meets_quality_threshold": score >= self.quality_threshold,
                 "iterations_used": iterations
