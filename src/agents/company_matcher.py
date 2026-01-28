@@ -37,7 +37,11 @@ class CompanyMatcher:
 
 1. **기업 식별**: 입력에서 언급된 기업을 식별
 2. **공식 이름 확인**: 해당 기업의 공식 정식 명칭 확인
-3. **웹사이트 찾기**: 기업의 공식 웹사이트 URL 확인
+3. **웹사이트 찾기**: 기업의 **실제 존재하는 공식 웹사이트 URL** 확인
+   - **중요**: 반드시 실제로 존재하고 접근 가능한 웹사이트만 제공하세요
+   - 잘못된 도메인이나 존재하지 않는 사이트를 만들지 마세요
+   - 일반적인 패턴: company.com, company.co.kr, company.io, company.team 등
+   - 예시: "beta" → "BETA Technologies" → https://beta.team (실제 존재)
 4. **IR 웹사이트 찾기**: 투자자관계(IR) 전용 웹사이트 확인 (예: ir.company.com, investors.company.com)
 5. **티커 심볼**: 상장사인 경우 주식 티커 심볼 확인
 
@@ -47,6 +51,12 @@ class CompanyMatcher:
 - 가장 최신의 기업명 사용 (M&A, 이름 변경 등 반영)
 - 티커는 주요 거래소의 것 사용 (NYSE, NASDAQ, KOSPI 등)
 - IR 웹사이트가 별도로 있으면 반드시 포함 (ir.company.com, investors.company.com 등)
+- **웹사이트 URL은 반드시 실제로 존재하는 공식 사이트만 제공하세요**
+- **추측하거나 존재하지 않는 도메인을 만들지 마세요**
+- **일반적인 패턴**: company.com, company.co.kr, company.io, company.team, company.aero 등
+- **예시**: "beta" → "BETA Technologies" → https://beta.team (실제 존재하는 사이트)
+- **절대 추측하거나 존재하지 않는 도메인을 만들지 마세요**
+- **실제로 알려진 공식 웹사이트만 제공하세요**
 
 ## 출력 형식 (JSON)
 
@@ -108,6 +118,18 @@ class CompanyMatcher:
             if not company_info.website:
                 return {
                     "error": "Could not determine official website for this company."
+                }
+            
+            # Validate website format
+            if not company_info.website.startswith(("http://", "https://")):
+                company_info.website = f"https://{company_info.website}"
+            
+            # Basic validation: check if website looks reasonable
+            # Don't accept obviously wrong domains
+            website_lower = company_info.website.lower()
+            if any(suspicious in website_lower for suspicious in ["example.com", "placeholder", "unknown", "n/a", "none", "test.com"]):
+                return {
+                    "error": f"Invalid website format detected: {company_info.website}. Please provide a valid official website."
                 }
 
             return {"company_info": company_info}
