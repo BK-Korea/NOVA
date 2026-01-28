@@ -123,8 +123,12 @@ class CompanyMatcher:
             error_msg = str(e)
             if "Authentication failed" in error_msg:
                 return {"error": "GLM API authentication failed. Please check your GLM_API_KEY in .env file."}
-            elif "Rate limit" in error_msg or "429" in error_msg:
-                return {"error": "API rate limit exceeded. Please wait a moment and try again."}
+            elif "Rate limit" in error_msg or "429" in error_msg or "rate limit" in error_msg.lower():
+                return {
+                    "error": "API rate limit exceeded (동시 사용 수가 한도를 초과했습니다).\n"
+                             "잠시 기다린 후 다시 시도해주세요. (보통 1-2분 후 재시도 가능)\n"
+                             "또는 Zhipu AI 고객 서비스에 연락하여 한도를 늘려주세요."
+                }
             elif "HTTP" in error_msg or "Status" in error_msg:
                 return {"error": f"API request failed: {error_msg}. Please check your API key and network connection."}
             else:

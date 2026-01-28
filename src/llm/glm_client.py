@@ -22,9 +22,19 @@ logger = logging.getLogger(__name__)
 MAX_EMBEDDING_CHARS = 6000
 
 
+class RateLimitError(Exception):
+    """Rate limit error that should be retried."""
+    pass
+
+
 def _is_retryable_error(exception: BaseException) -> bool:
     """Check if the exception is retryable (not 400 Bad Request or ValueError)."""
-    # Don't retry ValueErrors (typically validation or API format errors)
+    # Retry rate limit errors
+    if isinstance(exception, RateLimitError):
+        return True
+    if isinstance(exception, ValueError) and "rate limit" in str(exception).lower():
+        return True
+    # Don't retry other ValueErrors (typically validation or API format errors)
     if isinstance(exception, ValueError):
         return False
     if isinstance(exception, httpx.HTTPStatusError):
@@ -74,8 +84,8 @@ class GLMChat(BaseChatModel):
         return converted
 
     @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
+        stop=stop_after_attempt(5),  # More attempts for rate limit
+        wait=wait_exponential(multiplier=2, min=5, max=60),  # Longer wait for rate limit (up to 60s)
         retry=retry_if_exception(_is_retryable_error)
     )
     def _call_api(self, messages: List[dict]) -> dict:
@@ -105,10 +115,21 @@ class GLMChat(BaseChatModel):
                     elif response.status_code == 400:
                         raise ValueError(f"Bad request to GLM API: {error_detail}")
                     elif response.status_code == 429:
-                        raise ValueError("Rate limit exceeded - please wait and try again")
+                        # Parse error message
+                        try:
+                            error_data = response.json()
+                            error_msg = error_data.get("error", {}).get("message", "Rate limit exceeded")
+                        except:
+                            error_msg = "Rate limit exceeded"
+                        
+                        logger.warning(f"Rate limit hit: {error_msg}. Will retry with exponential backoff.")
+                        raise RateLimitError(f"Rate limit exceeded: {error_msg}")
                 
                 response.raise_for_status()
                 return response.json()
+        except RateLimitError:
+            # Re-raise rate limit errors (will be retried by tenacity)
+            raise
         except httpx.ConnectError as e:
             # Network connection error
             error_msg = "GLM API connection failed. Please check your internet connection and API endpoint."
