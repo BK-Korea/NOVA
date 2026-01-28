@@ -456,6 +456,7 @@ class IRScraper:
             soup = BeautifulSoup(response.text, "lxml")
 
             # Find all links to documents
+            links_found = 0
             for link in soup.find_all("a", href=True):
                 href = link.get("href")
                 if not href:
@@ -468,6 +469,28 @@ class IRScraper:
                 material = self._classify_link(full_url, link, page_url)
                 if material:
                     materials.append(material)
+                    links_found += 1
+            
+            # Also check for direct file links in page content (for Korean sites)
+            # Look for common file patterns in text
+            page_text = soup.get_text().lower()
+            if not materials and any(keyword in page_text for keyword in ["pdf", "다운로드", "download", "보고서", "자료"]):
+                # Try to find links in script tags or data attributes
+                for script in soup.find_all("script"):
+                    if script.string:
+                        # Look for URLs in JavaScript
+                        import re
+                        urls = re.findall(r'https?://[^\s"\'<>]+\.(?:pdf|ppt|pptx|doc|docx|xls|xlsx)', script.string)
+                        for url in urls:
+                            material = self._classify_link(url, None, page_url)
+                            if material:
+                                materials.append(material)
+                                links_found += 1
+            
+            if links_found > 0:
+                logger.debug(f"Found {links_found} materials on {page_url}")
+            else:
+                logger.debug(f"No materials found on {page_url} (checked {len(list(soup.find_all('a', href=True)))} links)")
 
         except Exception as e:
             logger.error(f"Error scraping {page_url}: {e}")
@@ -493,14 +516,34 @@ class IRScraper:
                 break
 
         # If no file extension, might be an HTML page
-        # Skip if it's not a document or IR-related page
-        if not file_format and not self._is_ir_page(url):
-            return None
+        # For HTML pages, only include if it's clearly an IR-related content page
+        if not file_format:
+            # Check if it's a content page (not just navigation)
+            if not self._is_ir_page(url):
+                return None
+            # For HTML pages, check if link text suggests it's actual content
+            if link_element:
+                link_text = link_element.get_text(strip=True).lower()
+                # Korean keywords for documents/reports
+                korean_keywords = ["보고서", "자료", "공시", "발표", "실적", "재무", "연례", "분기"]
+                # English keywords
+                english_keywords = ["report", "presentation", "release", "earnings", "financial", "annual", "quarterly"]
+                
+                if not any(kw in link_text for kw in korean_keywords + english_keywords):
+                    # Might be just a navigation link, skip
+                    return None
 
         # Get title from link text
-        title = link_element.get_text(strip=True)
+        if link_element:
+            title = link_element.get_text(strip=True)
+            # Also check for title attribute or data attributes
+            if not title or len(title) < 3:
+                title = link_element.get("title", "") or link_element.get("data-title", "")
+        else:
+            title = ""
+        
         if not title or len(title) < 3:
-            title = Path(parsed.path).stem
+            title = Path(parsed.path).stem or parsed.path.split("/")[-1] or "Document"
 
         # Classify material type
         material_type = self._classify_material_type(url, title, link_element)
@@ -526,7 +569,10 @@ class IRScraper:
             "annual", "report", "sec", "filing",
             # Shareholder letter keywords
             "letter", "shareholder", "stockholder", "ceo",
-            "update", "resources", "documents"
+            "update", "resources", "documents",
+            # Korean keywords
+            "보고서", "자료", "공시", "발표", "실적", "재무", "연례", "분기",
+            "투자", "주주", "공시자료", "재무제표"
         ]
         return any(keyword in path_lower for keyword in ir_keywords)
 

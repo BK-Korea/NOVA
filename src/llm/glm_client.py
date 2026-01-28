@@ -109,6 +109,11 @@ class GLMChat(BaseChatModel):
                 
                 response.raise_for_status()
                 return response.json()
+        except httpx.ConnectError as e:
+            # Network connection error
+            error_msg = "GLM API connection failed. Please check your internet connection and API endpoint."
+            logger.error(f"{error_msg} Original error: {e}")
+            raise ValueError(error_msg) from e
         except httpx.HTTPStatusError as e:
             # Re-raise with more context
             error_msg = f"GLM API HTTP error {e.response.status_code}"
