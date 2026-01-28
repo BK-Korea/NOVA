@@ -351,6 +351,12 @@ class IRScraper:
                         logger.info(f"Found IR link from homepage: {full_url}")
                         ir_links.append(full_url)
             
+        except httpx.ConnectError as e:
+            error_msg = str(e)
+            if "nodename nor servname" in error_msg or "Name or service not known" in error_msg:
+                logger.warning(f"DNS error for {base_url}: Domain may not exist or DNS resolution failed")
+            else:
+                logger.warning(f"Connection error for {base_url}: {e}")
         except Exception as e:
             logger.warning(f"Error crawling homepage for IR links: {e}")
         
@@ -492,6 +498,12 @@ class IRScraper:
             else:
                 logger.debug(f"No materials found on {page_url} (checked {len(list(soup.find_all('a', href=True)))} links)")
 
+        except httpx.ConnectError as e:
+            error_msg = str(e)
+            if "nodename nor servname" in error_msg or "Name or service not known" in error_msg:
+                logger.warning(f"DNS error for {page_url}: Domain may not exist or DNS resolution failed")
+            else:
+                logger.warning(f"Connection error for {page_url}: {e}")
         except Exception as e:
             logger.error(f"Error scraping {page_url}: {e}")
 

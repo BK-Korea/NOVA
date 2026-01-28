@@ -150,7 +150,27 @@ def main():
     result = agent.fetch_materials(company_info.official_name)
 
     if result.get("error"):
-        console.print(f"[red]Error: {result['error']}[/red]")
+        error_msg = result['error']
+        console.print(f"[red]Error: {error_msg}[/red]")
+        
+        # Provide helpful suggestions for common errors
+        if "No IR materials found" in error_msg:
+            console.print("\n[yellow]💡 Suggestions:[/yellow]")
+            console.print("  • Check if the company website URL is correct")
+            console.print("  • The company may not have a public IR section")
+            console.print("  • Try using the full company name (e.g., 'Beta Technologies' instead of 'beta')")
+            console.print("  • Check if the website is accessible in your browser")
+            console.print("  • DNS errors may indicate the domain doesn't exist")
+        elif "DNS" in error_msg or "nodename" in error_msg or "servname" in error_msg:
+            console.print("\n[yellow]💡 Suggestions:[/yellow]")
+            console.print("  • The domain may not exist or DNS resolution failed")
+            console.print("  • Check your internet connection")
+            console.print("  • Verify the company website URL is correct")
+            console.print("  • Try using the full company name for better matching")
+            console.print(f"  • Website found: {company_info.website}")
+            if company_info.ir_website:
+                console.print(f"  • IR website: {company_info.ir_website}")
+        
         raise typer.Exit(1)
 
     materials = result.get("materials", [])
